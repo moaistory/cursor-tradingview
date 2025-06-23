@@ -1,0 +1,57 @@
+//@version=5
+indicator("Moving Average Bollinger Order Strategy", overlay=true)
+
+// 이동평균선 설정
+ma240 = ta.sma(close, 240)
+ma120 = ta.sma(close, 120)
+ma60 = ta.sma(close, 60)
+
+// 볼린저 밴드 설정
+bb_length = input.int(20, title="볼린저 밴드 기간", minval=1)
+bb_mult = input.float(2.0, title="볼린저 밴드 표준편차", minval=0.001, maxval=50, step=0.1)
+
+// 볼린저 밴드 계산
+bb_basis = ta.sma(close, bb_length)
+bb_dev = bb_mult * ta.stdev(close, bb_length)
+bb_upper = bb_basis + bb_dev
+bb_lower = bb_basis - bb_dev
+
+// 이동평균선 그리기
+plot(ma240, color=color.purple, title="MA240", linewidth=2)
+plot(ma120, color=color.blue, title="MA120", linewidth=2)
+plot(ma60, color=color.orange, title="MA60", linewidth=2)
+
+// 볼린저 밴드 그리기
+plot(bb_basis, color=color.gray, title="BB 중간선", linewidth=1)
+p1 = plot(bb_upper, color=color.gray, title="BB 상단선", linewidth=1)
+p2 = plot(bb_lower, color=color.gray, title="BB 하단선", linewidth=1)
+fill(p1, p2, color=color.new(color.gray, 95), title="BB 영역")
+
+// 롱 진입 조건: 볼밴상단 > 볼밴중간 > MA60 > 볼밴하단 > MA120 > MA240
+long_condition = bb_upper > bb_basis and bb_basis > ma60 and ma60 > bb_lower and bb_lower > ma120 and ma120 > ma240
+
+// 숏 진입 조건: MA240 > MA120 > 볼밴하단 > MA60 > 볼밴중간 > 볼밴상단
+short_condition = ma240 > ma120 and ma120 > bb_lower and bb_lower > ma60 and ma60 > bb_basis and bb_basis > bb_upper
+
+// 시각적 표시
+// 배경색
+bgcolor(long_condition ? color.new(color.green, 80) : na, title="롱 신호")
+bgcolor(short_condition ? color.new(color.red, 80) : na, title="숏 신호")
+
+// 진입 신호
+plotshape(long_condition, title="롱 진입", location=location.belowbar, color=color.green, style=shape.triangleup, size=size.normal)
+plotshape(short_condition, title="숏 진입", location=location.abovebar, color=color.red, style=shape.triangledown, size=size.normal)
+
+// 각 조건별 표시
+plotshape(bb_upper > bb_basis, title="BB상단 > BB중간", location=location.top, color=color.yellow, style=shape.circle, size=size.tiny)
+plotshape(bb_basis > ma60, title="BB중간 > MA60", location=location.top, color=color.yellow, style=shape.circle, size=size.tiny)
+plotshape(ma60 > bb_lower, title="MA60 > BB하단", location=location.top, color=color.yellow, style=shape.circle, size=size.tiny)
+plotshape(bb_lower > ma120, title="BB하단 > MA120", location=location.top, color=color.yellow, style=shape.circle, size=size.tiny)
+plotshape(ma120 > ma240, title="MA120 > MA240", location=location.top, color=color.yellow, style=shape.circle, size=size.tiny)
+
+// 숏 조건 표시
+plotshape(ma240 > ma120, title="MA240 > MA120", location=location.bottom, color=color.purple, style=shape.circle, size=size.tiny)
+plotshape(ma120 > bb_lower, title="MA120 > BB하단", location=location.bottom, color=color.purple, style=shape.circle, size=size.tiny)
+plotshape(bb_lower > ma60, title="BB하단 > MA60", location=location.bottom, color=color.purple, style=shape.circle, size=size.tiny)
+plotshape(ma60 > bb_basis, title="MA60 > BB중간", location=location.bottom, color=color.purple, style=shape.circle, size=size.tiny)
+plotshape(bb_basis > bb_upper, title="BB중간 > BB상단", location=location.bottom, color=color.purple, style=shape.circle, size=size.tiny) 
