@@ -1,0 +1,126 @@
+//@version=5
+strategy("Box Long Short Strategy", overlay=true, margin_long=100, margin_short=100)
+
+// -------------------------------------- 1.추세 확인 코드 --------------------------------------
+// bars_min_in_sideway 설정값 8개봉을 기준으로 추세를 파악한다.
+// 횡보의 경우 네모박스로 표시한다.
+securityNoRepaint(sym, tf, src) =>
+    request.security(sym, tf, src[0])[0]
+
+gr01 = "Settings Sideway"
+
+bars_min_in_sideway      = input.int(8, "Min Bars In Sideway", minval=4, group=gr01, inline="2")
+bars_ext_for_sideway     = input.int(2, "Extend Bars For Sideway", minval=0, group=gr01, inline="3")
+percent_change_sideway   = input.float(2.0, "Percent Change To Form Sideway", minval=0.01, group=gr01, inline="4", step=0.01)
+recommended_settings     = input(true, "Use Recommended Settings For % per Timeframe", group=gr01, inline="5")
+
+if recommended_settings
+    float chartTFInMinutes = timeframe.in_seconds() / 60
+    percent_change_sideway := 0.05
+    if chartTFInMinutes == 1
+        percent_change_sideway := 0.1
+    if chartTFInMinutes == 5
+        percent_change_sideway := 0.1
+    if chartTFInMinutes == 10
+        percent_change_sideway := 0.15
+    if chartTFInMinutes == 15
+        percent_change_sideway := 0.25
+    if chartTFInMinutes == 30
+        percent_change_sideway := 0.5
+    if chartTFInMinutes == 45
+        percent_change_sideway := 0.7
+    if chartTFInMinutes == 60
+        percent_change_sideway := 0.75
+    if chartTFInMinutes == 120
+        percent_change_sideway := 1.0
+    if chartTFInMinutes == 180
+        percent_change_sideway := 1.1
+    if chartTFInMinutes == 240
+        percent_change_sideway := 1.25    
+    if chartTFInMinutes == 60 * 24
+        percent_change_sideway := 4.0
+    if chartTFInMinutes == 60 * 24 * 7
+        percent_change_sideway := 10.0
+    if chartTFInMinutes > 60 * 24 * 7
+        percent_change_sideway := 20.0
+
+sideway_color_box_fill   = input.color(color.new(#0000FF,90), title="Fill Sideways Boxes:", group=gr01, inline="6")
+sideway_color_box_border = input.color(color.new(color.gray,50), title="Contour:", group=gr01, inline="6")
+
+var is_new_sideway = false        // 박스 시작작
+var int new_sideway_x = 0         // 박스 시작점
+var float new_sideway_y = 0.0     // 박스 가운데
+var float new_sideway_high = 0.0  // 박스 가운데로부터 높이 차이
+var box[] sideway_boxes = array.new_box()
+var box forming_sideway = box.new(left=0, right=0, top=0, bottom=0, bgcolor=sideway_color_box_fill, border_color=sideway_color_box_border)
+var boxTop = high
+var boxBottom = low
+
+long_condition = false
+short_condition = false
+
+
+if bar_index > bars_min_in_sideway + 1
+
+    if is_new_sideway
+        bar_cur_mid_price = math.abs(open[0] - close[0]) / 2 + math.min(open[0], close[0])
+        pc = math.abs(100 - math.abs(new_sideway_y * 100 / bar_cur_mid_price))
+        if pc > percent_change_sideway // 횡보 아님, 초기화 작업
+            _left = forming_sideway.get_left()
+            _right = forming_sideway.get_right()
+            _top = forming_sideway.get_top()
+            _bottom = forming_sideway.get_bottom()
+            array.push(sideway_boxes, box.new(left=_left, right=_right, top=_top, bottom=_bottom, bgcolor=sideway_color_box_fill, border_color=sideway_color_box_border))
+
+            forming_sideway.set_left(bar_index)
+            forming_sideway.set_right(bar_index)
+            forming_sideway.set_top(0)
+            forming_sideway.set_bottom(0)
+
+            is_new_sideway := false
+        
+        else // 횡보, 박스 연결
+            forming_sideway.set_left(new_sideway_x)
+            forming_sideway.set_right(bar_index+bars_ext_for_sideway)
+            forming_sideway.set_top(new_sideway_y+new_sideway_high)
+            forming_sideway.set_bottom(new_sideway_y-new_sideway_high)
+            forming_sideway.set_bgcolor(sideway_color_box_fill)
+            forming_sideway.set_border_color(sideway_color_box_border)
+            boxTop := new_sideway_y+new_sideway_high
+            boxBottom := new_sideway_y-new_sideway_high
+
+    else  // 최초 횡보 포착       
+        bar_cur_mid_price = math.abs(open[0] - close[0]) / 2 + math.min(open[0], close[0])
+        is_new_sideway := true
+        for i = 1 to bars_min_in_sideway
+            bar_pre_mid_price = math.abs(open[i] - close[i]) / 2 + math.min(open[i], close[i])
+            pc = math.abs(100 - math.abs(bar_pre_mid_price * 100 / bar_cur_mid_price))
+            if pc > percent_change_sideway
+                is_new_sideway := false
+
+        if is_new_sideway
+            new_sideway_x := bar_index - bars_min_in_sideway
+            new_sideway_y := bar_cur_mid_price
+            new_sideway_high := bar_cur_mid_price * percent_change_sideway / 100
+
+
+// 롱추세, 숏추세 판정
+sideway_length = bar_index - new_sideway_x
+is_sideway = bar_index > bars_min_in_sideway + 1 and is_new_sideway and sideway_length> 10
+
+buy_price = new_sideway_y
+long_stoploss = buy_price - new_sideway_high
+short_stoploss = buy_price + new_sideway_high
+
+// 전략 진입 조건
+if not is_sideway[1] and is_sideway
+    // 롱 포지션 진입
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long Exit", "Long", stop=long_stoploss)
+    
+    // 숏 포지션 진입
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short Exit", "Short", stop=short_stoploss)
+
+// 추세 배경
+bgcolor(is_sideway ? color.new(color.gray, 80) : na )
