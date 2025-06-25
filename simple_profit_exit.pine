@@ -1,0 +1,33 @@
+//@version=5
+// 수익이면서 음봉 2개 연속 시 청산 로직
+// 기존 전략에 추가하여 사용하세요
+
+// 입력 파라미터
+profit_threshold = input.float(0.5, title="수익 임계값 (%)", minval=0.1, step=0.1)
+
+// 음봉 판별
+bearish_candle = close < open
+
+// 연속 음봉 카운트
+bearish_count = 0
+bearish_count := bearish_candle ? bearish_count + 1 : 0
+
+// 수익 계산
+position_profit_pct = 0.0
+if strategy.position_size > 0
+    position_profit_pct = (close - strategy.position_avg_price) / strategy.position_avg_price * 100
+
+// 청산 조건: 수익이면서 음봉이 2개 연속
+profit_exit_condition = strategy.position_size > 0 and 
+                        position_profit_pct >= profit_threshold and 
+                        bearish_count >= 2
+
+// 포지션 청산 (기존 전략에서 사용)
+if profit_exit_condition
+    strategy.close_all(comment="Profit Exit on 2 Bearish")
+
+// 시각적 표시
+bgcolor(profit_exit_condition ? color.red : na, title="수익 청산 신호", transp=70)
+
+// 알림 설정 (선택사항)
+alertcondition(profit_exit_condition, title="수익 청산 알림", message="수익이면서 음봉 2개 연속 - 포지션 청산") 

@@ -1,5 +1,5 @@
 //@version=5
-strategy("Box Long Short Strategy", overlay=true, margin_long=100, margin_short=100)
+indicator("Box Long Short Strategy", overlay=true)
 
 // -------------------------------------- 1.추세 확인 코드 --------------------------------------
 // bars_min_in_sideway 설정값 8개봉을 기준으로 추세를 파악한다.
@@ -51,8 +51,6 @@ var is_new_sideway = false        // 박스 시작작
 var int new_sideway_x = 0         // 박스 시작점
 var float new_sideway_y = 0.0     // 박스 가운데
 var float new_sideway_high = 0.0  // 박스 가운데로부터 높이 차이
-var box[] sideway_boxes = array.new_box()
-var box forming_sideway = box.new(left=0, right=0, top=0, bottom=0, bgcolor=sideway_color_box_fill, border_color=sideway_color_box_border)
 var boxTop = high
 var boxBottom = low
 
@@ -61,31 +59,13 @@ short_condition = false
 
 
 if bar_index > bars_min_in_sideway + 1
-
     if is_new_sideway
         bar_cur_mid_price = math.abs(open[0] - close[0]) / 2 + math.min(open[0], close[0])
         pc = math.abs(100 - math.abs(new_sideway_y * 100 / bar_cur_mid_price))
         if pc > percent_change_sideway // 횡보 아님, 초기화 작업
-            _left = forming_sideway.get_left()
-            _right = forming_sideway.get_right()
-            _top = forming_sideway.get_top()
-            _bottom = forming_sideway.get_bottom()
-            array.push(sideway_boxes, box.new(left=_left, right=_right, top=_top, bottom=_bottom, bgcolor=sideway_color_box_fill, border_color=sideway_color_box_border))
-
-            forming_sideway.set_left(bar_index)
-            forming_sideway.set_right(bar_index)
-            forming_sideway.set_top(0)
-            forming_sideway.set_bottom(0)
-
             is_new_sideway := false
         
         else // 횡보, 박스 연결
-            forming_sideway.set_left(new_sideway_x)
-            forming_sideway.set_right(bar_index+bars_ext_for_sideway)
-            forming_sideway.set_top(new_sideway_y+new_sideway_high)
-            forming_sideway.set_bottom(new_sideway_y-new_sideway_high)
-            forming_sideway.set_bgcolor(sideway_color_box_fill)
-            forming_sideway.set_border_color(sideway_color_box_border)
             boxTop := new_sideway_y+new_sideway_high
             boxBottom := new_sideway_y-new_sideway_high
 
@@ -105,22 +85,37 @@ if bar_index > bars_min_in_sideway + 1
 
 
 // 롱추세, 숏추세 판정
-sideway_length = bar_index - new_sideway_x
-is_sideway = bar_index > bars_min_in_sideway + 1 and is_new_sideway and sideway_length> 10
+is_sideway = is_new_sideway
+sideway_base_price = new_sideway_y
+sideway_high = sideway_base_price + new_sideway_high
+sideway_low = sideway_base_price - new_sideway_high
 
-buy_price = new_sideway_y
-long_stoploss = buy_price - new_sideway_high
-short_stoploss = buy_price + new_sideway_high
+// -------------------------------------- 2.RSI 계산 및 배경색 설정 --------------------------------------
+// RSI 설정
+rsi_length = input.int(14, title="RSI 기간", minval=1)
+rsi_overbought = input.int(70, title="RSI 과매수 기준", minval=50, maxval=100)
+rsi_oversold = input.int(30, title="RSI 과매도 기준", minval=0, maxval=50)
 
-// 전략 진입 조건
-if not is_sideway[1] and is_sideway
-    // 롱 포지션 진입
-    strategy.entry("Long", strategy.long)
-    strategy.exit("Long Exit", "Long", stop=long_stoploss)
-    
-    // 숏 포지션 진입
-    strategy.entry("Short", strategy.short)
-    strategy.exit("Short Exit", "Short", stop=short_stoploss)
+// RSI 계산
+rsi_value = ta.rsi(close, rsi_length)
 
-// 추세 배경
-bgcolor(is_sideway ? color.new(color.gray, 80) : na )
+// RSI 배경색 조건
+rsi_oversold_condition = rsi_value <= rsi_oversold
+rsi_overbought_condition = rsi_value >= rsi_overbought
+
+// 시각적 표시
+plot(is_new_sideway ? sideway_high : na, title="Long1 Stop Loss", color=color.red, linewidth=2, style=plot.style_linebr)
+plot(is_new_sideway? sideway_low: na, title="Long2 Stop Loss", color=color.blue, linewidth=2, style=plot.style_linebr)
+
+// 배경색 설정 (우선순위: RSI > 횡보)
+bgcolor(rsi_oversold_condition? color.new(color.red, 70) : na, title="RSI 과매도")
+
+bgcolor(rsi_overbought_condition? color.new(color.green, 70) : na, title="RSI 과매수")
+
+bgcolor(is_sideway? color.new(color.gray, 80) :  na, title="횡보 구간")
+
+is_sideway_ago = is_new_sideway[7] and is_new_sideway[6] and is_new_sideway[5] and is_new_sideway[4] and (is_new_sideway[3] or is_new_sideway[2] or is_new_sideway[1] or is_new_sideway)
+
+
+plotshape(is_sideway_ago and not rsi_overbought_condition[1] and rsi_overbought_condition, title="LONG", location=location.belowbar, color=color.green, style=shape.triangleup, size=size.normal)
+plotshape(is_sideway_ago and not rsi_oversold_condition[1] and rsi_oversold_condition, title="SHORT", location=location.abovebar, color=color.red, style=shape.triangledown, size=size.normal)
