@@ -1,0 +1,287 @@
+//@version=5
+indicator("Box Long Short Strategy", overlay=true)
+
+// -------------------------------------- 1.추세 확인 코드 --------------------------------------
+// bars_min_in_sideway 설정값 8개봉을 기준으로 추세를 파악한다.
+// 횡보의 경우 네모박스로 표시한다.
+securityNoRepaint(sym, tf, src) =>
+    request.security(sym, tf, src[0])[0]
+
+gr01 = "Settings Sideway"
+
+bars_min_in_sideway      = input.int(8, "Min Bars In Sideway", minval=4, group=gr01, inline="2")
+bars_ext_for_sideway     = input.int(2, "Extend Bars For Sideway", minval=0, group=gr01, inline="3")
+percent_change_sideway   = input.float(2.0, "Percent Change To Form Sideway", minval=0.01, group=gr01, inline="4", step=0.01)
+recommended_settings     = input(true, "Use Recommended Settings For % per Timeframe", group=gr01, inline="5")
+
+if recommended_settings
+    float chartTFInMinutes = timeframe.in_seconds() / 60
+    percent_change_sideway := 0.05
+    if chartTFInMinutes == 1
+        percent_change_sideway := 0.1
+    if chartTFInMinutes == 5
+        percent_change_sideway := 0.1
+    if chartTFInMinutes == 10
+        percent_change_sideway := 0.15
+    if chartTFInMinutes == 15
+        percent_change_sideway := 0.25
+    if chartTFInMinutes == 30
+        percent_change_sideway := 0.5
+    if chartTFInMinutes == 45
+        percent_change_sideway := 0.7
+    if chartTFInMinutes == 60
+        percent_change_sideway := 0.75
+    if chartTFInMinutes == 120
+        percent_change_sideway := 1.0
+    if chartTFInMinutes == 180
+        percent_change_sideway := 1.1
+    if chartTFInMinutes == 240
+        percent_change_sideway := 1.25    
+    if chartTFInMinutes == 60 * 24
+        percent_change_sideway := 4.0
+    if chartTFInMinutes == 60 * 24 * 7
+        percent_change_sideway := 10.0
+    if chartTFInMinutes > 60 * 24 * 7
+        percent_change_sideway := 20.0
+
+sideway_color_box_fill   = input.color(color.new(#0000FF,90), title="Fill Sideways Boxes:", group=gr01, inline="6")
+sideway_color_box_border = input.color(color.new(color.gray,50), title="Contour:", group=gr01, inline="6")
+
+var is_new_sideway = false        // 박스 시작작
+var int new_sideway_x = 0         // 박스 시작점
+var float new_sideway_y = 0.0     // 박스 가운데
+var float new_sideway_high = 0.0  // 박스 가운데로부터 높이 차이
+var boxTop = high
+var boxBottom = low
+
+long_condition = false
+short_condition = false
+
+
+if bar_index > bars_min_in_sideway + 1
+    if is_new_sideway
+        bar_cur_mid_price = math.abs(open[0] - close[0]) / 2 + math.min(open[0], close[0])
+        pc = math.abs(100 - math.abs(new_sideway_y * 100 / bar_cur_mid_price))
+        if pc > percent_change_sideway // 횡보 아님, 초기화 작업
+            is_new_sideway := false
+        
+        else // 횡보, 박스 연결
+            boxTop := new_sideway_y+new_sideway_high
+            boxBottom := new_sideway_y-new_sideway_high
+
+    else  // 최초 횡보 포착       
+        bar_cur_mid_price = math.abs(open[0] - close[0]) / 2 + math.min(open[0], close[0])
+        is_new_sideway := true
+        for i = 1 to bars_min_in_sideway
+            bar_pre_mid_price = math.abs(open[i] - close[i]) / 2 + math.min(open[i], close[i])
+            pc = math.abs(100 - math.abs(bar_pre_mid_price * 100 / bar_cur_mid_price))
+            if pc > percent_change_sideway
+                is_new_sideway := false
+
+        if is_new_sideway
+            new_sideway_x := bar_index - bars_min_in_sideway
+            new_sideway_y := bar_cur_mid_price
+            new_sideway_high := bar_cur_mid_price * percent_change_sideway / 100
+
+
+// 롱추세, 숏추세 판정
+is_sideway = is_new_sideway
+sideway_base_price = new_sideway_y
+sideway_high = sideway_base_price + new_sideway_high
+sideway_low = sideway_base_price - new_sideway_high
+
+
+// 시각적 표시
+plot(is_new_sideway ? sideway_high : na, title="Long1 Stop Loss", color=color.gray, linewidth=2, style=plot.style_linebr)
+plot(is_new_sideway? sideway_low: na, title="Long2 Stop Loss", color=color.gray, linewidth=2, style=plot.style_linebr)
+bgcolor(is_sideway? color.new(color.gray, 80) :  na, title="횡보 구간")
+
+
+// ------------------------------------- 웨이브트렌드  -------------------------------------
+// MA
+ma5 = ta.sma(close, 5)
+ma10 = ta.sma(close, 10)
+ma20 = ta.sma(close, 20)
+ma40 = ta.sma(close, 40)
+ma60 = ta.sma(close, 60)
+ma120 = ta.sma(close, 120)
+ma240 = ta.sma(close, 240)
+bbUpper20 = ta.sma(close, 20) + 2 * ta.stdev(close, 20) 
+bbLowwer20 = ta.sma(close, 20) - 2 * ta.stdev(close, 20) 
+bbUpper60 = ta.sma(close, 60) + 0.5 * ta.stdev(close, 60) 
+bbLowwer60 = ta.sma(close, 60) - 0.5 * ta.stdev(close, 60) 
+plot(ma5, title="ma5", color=color.red, linewidth=2)
+plot(ma10, title="ma10", color=color.orange, linewidth=2)
+plot(ma20, title="ma20", color=color.yellow, linewidth=2)
+plot(ma40, title="ma40", color=color.green, linewidth=2)
+plot(ma60, title="ma60", color=color.aqua, linewidth=3)
+plot(ma120, title="ma120", color=color.blue, linewidth=2)
+plot(ma240, title="ma240", color=color.purple, linewidth=2)
+plot(bbUpper20, title="bb", color=color.gray)
+plot(bbLowwer20, title="bb", color=color.gray)
+
+isUp = ma10 > ma20 and ma20 > ma40 and ma40 > ma60 // and ma60 > ma120 and ma120 > ma240
+isDown = ma10 < ma20 and ma20 < ma40 and ma40 < ma60 // and ma60 < ma120 and ma120 < ma240
+
+// -------------------------------------- wave option --------------------------------------
+
+n1 = 10 // Longitud Del Canal
+n2 = 21  // Periodo Movil
+
+ap = hlc3 
+esa = ta.ema(ap, n1)
+d = ta.ema(math.abs(ap - esa), n1)
+ci = (ap - esa) / (0.015 * d)
+tci = ta.ema(ci, n2)
+ 
+wt1 = tci
+direction = 0
+wtUp = ta.rising(wt1,1) 
+wtDown = ta.falling(wt1, 1)
+direction := wtUp ? 1 : wtDown ? -1 : nz(direction[1])
+
+
+//bgcolor(isUp ? color.new(color.red, 50) : na )
+//bgcolor(isDown? color.new(color.green, 50) : na )
+//bgcolor(wt1 > 53 ? color.new(color.orange, 50) : na )
+//bgcolor(wt1 < -53? color.new(color.lime, 50) : na )
+
+longConditions = false
+shortConditions = false
+
+wtPvtLen = 2
+pvtHighArr = ta.pivothigh(wt1, 5, wtPvtLen)
+pvtLowArr = ta.pivotlow(wt1, 5, wtPvtLen)
+pvtHigh0 = ta.valuewhen(pvtHighArr, wt1[wtPvtLen], 0)
+pvtLow0 = ta.valuewhen(pvtLowArr, wt1[wtPvtLen], 0)
+
+// --- 신호 로직 개선 (추세장 필터 및 신호 지연) ---
+
+// 1. 추세 정의 (ma10, ma20, ma40 기준)
+isUpTrend = ma10 > ma20 and ma20 > ma40
+isDownTrend = ma10 < ma20 and ma20 < ma40
+
+// 2. 초기 변곡 신호 감지
+initialShortSignal = (bbUpper20[wtPvtLen+1] < high[wtPvtLen+1] or bbUpper20[wtPvtLen] < high[wtPvtLen]) and pvtHighArr and pvtHigh0 > 40
+initialLongSignal = (bbLowwer20[wtPvtLen+1] > low[wtPvtLen+1] or bbLowwer20[wtPvtLen] > low[wtPvtLen]) and pvtLowArr and pvtLow0 < -40
+
+// 3. 신호 지연을 위한 상태 관리
+var bool waitingForLongConfirmation = false
+var bool waitingForShortConfirmation = false
+
+// 추세장에서 초기 신호 발생 시, 확인 대기 상태로 전환
+if initialShortSignal and isUpTrend
+    waitingForShortConfirmation := true
+if initialLongSignal and isDownTrend
+    waitingForLongConfirmation := true
+
+// 4. 최종 신호 결정
+waveLongConditions = false
+waveShortContions = false
+
+// 비추세장: 초기 신호가 곧 최종 신호
+if initialLongSignal and not isDownTrend
+    waveLongConditions := true
+if initialShortSignal and not isUpTrend
+    waveShortContions := true
+
+// 추세장: ma10 돌파/이탈을 확인하여 최종 신호 결정
+if waitingForLongConfirmation and close > ma10
+    waveLongConditions := true
+    waitingForLongConfirmation := false // 상태 리셋
+if waitingForShortConfirmation and close < ma10
+    waveShortContions := true
+    waitingForShortConfirmation := false // 상태 리셋
+    
+// 반대 신호가 나오면 대기 상태 해제
+if waveLongConditions
+    waitingForShortConfirmation := false
+if waveShortContions
+    waitingForLongConfirmation := false
+    
+// 5. 중복 신호 방지
+waveLongConditions_filtered = waveLongConditions and not waveLongConditions[1]
+waveShortContions_filtered = waveShortContions and not waveShortContions[1]
+
+// -------------------------------------- 6.신호 확인 및 진입 로직 --------------------------------------
+
+// 신호 확인 기간 설정
+confirmation_bars = input.int(5, title="신호 확인 기간 (봉)", minval=3, maxval=15)
+
+// 음봉/양봉 판별
+bearish_candle = close < open
+bullish_candle = close > open
+
+// 진입 신호 변수
+var bool longEntrySignal = false
+var bool shortEntrySignal = false
+
+// Long 신호 확인 로직
+var bool waitingForLongSignal = false
+var int longSignalBarCount = 0
+var float longSignalLow = 0.0
+
+// Long 신호 발생 시 대기 상태 시작
+if waveLongConditions_filtered and not is_sideway
+    waitingForLongSignal := true
+    longSignalBarCount := 0
+    // 신호 발생 시점 또는 직전 봉의 저점 중 더 낮은 값 사용
+    longSignalLow := math.min(low, low[1])
+
+// Long 신호 확인 중
+if waitingForLongSignal
+    longSignalBarCount := longSignalBarCount + 1
+    
+    // 7개봉 후 확인 조건
+    if longSignalBarCount >= confirmation_bars
+        // 저점을 안 깨고 음봉-양봉 패턴 확인
+        low_not_broken = low >= longSignalLow
+        bearish_bullish_pattern = bearish_candle[1] and bullish_candle
+        
+        if low_not_broken and bearish_bullish_pattern
+            // Long 진입 신호 설정
+            longEntrySignal := true
+            waitingForLongSignal := false
+
+// Short 신호 확인 로직
+var bool waitingForShortSignal = false
+var int shortSignalBarCount = 0
+var float shortSignalHigh = 0.0
+
+// Short 신호 발생 시 대기 상태 시작
+if waveShortContions_filtered and not is_sideway
+    waitingForShortSignal := true
+    shortSignalBarCount := 0
+    // 신호 발생 시점 또는 직전 봉의 고점 중 더 높은 값 사용
+    shortSignalHigh := math.max(high, high[1])
+
+// Short 신호 확인 중
+if waitingForShortSignal
+    shortSignalBarCount := shortSignalBarCount + 1
+    
+    // 7개봉 후 확인 조건
+    if shortSignalBarCount >= confirmation_bars
+        // 고점을 안 깨고 양봉-음봉 패턴 확인
+        high_not_broken = high <= shortSignalHigh
+        bullish_bearish_pattern = bullish_candle[1] and bearish_candle
+        
+        if high_not_broken and bullish_bearish_pattern
+            // Short 진입 신호 설정
+            shortEntrySignal := true
+            waitingForShortSignal := false
+
+// 신호 대기 중 시각적 표시
+// bgcolor(waitingForLongSignal ? color.new(color.yellow, 80) : na, title="Long 신호 대기")
+// bgcolor(waitingForShortSignal ? color.new(color.orange, 80) : na, title="Short 신호 대기")
+
+// 진입 신호 표시
+plotshape(longEntrySignal, title='LONG ENTRY', location=location.belowbar, color=color.green, style=shape.triangleup, size=size.normal, textcolor=color.white, text="LONG")
+plotshape(shortEntrySignal, title='SHORT ENTRY', location=location.abovebar, color=color.red, style=shape.triangledown, size=size.normal, textcolor=color.white, text="SHORT")
+
+// 기존 신호 표시 (참고용)
+// plotshape(not is_sideway and waveLongConditions_filtered, title='WLONG',location=location.belowbar, color=color.green , style=shape.labelup, size=size.small, textcolor=color.white, text = "Wave L")
+// plotshape(not is_sideway and waveShortContions_filtered, title='SHORT',location=location.abovebar, color=color.red, style=shape.labeldown, size=size.small, textcolor=color.white, text = "Wave S")
+
+// 진입 신호 리셋
+longEntrySignal := false
+shortEntrySignal := false
